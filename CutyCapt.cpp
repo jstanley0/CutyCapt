@@ -36,6 +36,7 @@
 #include <QByteArray>
 #include <QNetworkRequest>
 #include <QNetworkProxy>
+#include "TracingNetworkAccessManager.hpp"
 #include "CutyCapt.hpp"
 
 #if QT_VERSION >= 0x040600 && 0
@@ -377,6 +378,7 @@ CaptHelp(void) {
     "  --smooth                       Attempt to enable Qt's high-quality settings.\n"
 #endif
     "  --insecure                     Ignore SSL/TLS certificate errors            \n"
+    "  --connection-trace=<filename>  Record URLs for all outbound HTTP requests   \n"
     " -----------------------------------------------------------------------------\n"
     "  <f> is svg,ps,pdf,itext,html,rtree,png,jpeg,mng,tiff,gif,bmp,ppm,xbm,xpm    \n"
     " -----------------------------------------------------------------------------\n"
@@ -426,7 +428,9 @@ main(int argc, char *argv[]) {
     QNetworkAccessManager::GetOperation;
   QByteArray body;
   QNetworkRequest req;
-  QNetworkAccessManager manager;
+  TracingNetworkAccessManager manager;
+  page.setNetworkAccessManager(&manager);
+  FILE *traceFile = NULL;
 
   // Parse command line parameters
   for (int ax = 1; ax < argc; ++ax) {
@@ -558,9 +562,15 @@ main(int argc, char *argv[]) {
       QNetworkProxy proxy = QNetworkProxy(QNetworkProxy::HttpProxy,
         p.host(), p.port(80), p.userName(), p.password());
       manager.setProxy(proxy);
-      page.setNetworkAccessManager(&manager);
 #endif
 
+    } else if (strncmp("--connection-trace", s, nlen) == 0) {
+      traceFile = fopen(value, "w");
+      if (!traceFile) {
+        perror(value);
+        exit(1);
+      }
+      manager.enableConnectionTrace(traceFile);
 #if CUTYCAPT_SCRIPT
     } else if (strncmp("--inject-script", s, nlen) == 0) {
       argInjectScript = value;
@@ -715,5 +725,10 @@ main(int argc, char *argv[]) {
   else
     page.mainFrame()->load(req, method);
 
-  return app.exec();
+  int retval = app.exec();
+
+  if (traceFile)
+    fclose(traceFile);
+
+  return retval;
 }
